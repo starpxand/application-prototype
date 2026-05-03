@@ -1,0 +1,346 @@
+# GTA VI Web Prototype — Game Systems Specification
+# Описание структуры данных игровых систем (входящие/исходящие параметры)
+
+openapi: "3.0.0"
+info:
+  title: GTA VI Web Prototype — Internal Game API
+  version: "1.0.0"
+  description: |
+    Спецификация внутренних структур данных и интерфейсов игровых систем.
+    Файл описывает форматы объектов, используемых в game_ai.html.
+
+# ──────────────────────────────────────────
+# GAME OBJECTS
+# ──────────────────────────────────────────
+components:
+  schemas:
+
+    # Игровой мир
+    CityConfig:
+      type: object
+      description: Параметры генерации процедурного города
+      properties:
+        blockSize:
+          type: number
+          default: 50
+          description: Размер одного квартала (единиц Three.js)
+        roadWidth:
+          type: number
+          default: 14
+          description: Ширина дороги
+        cityRadius:
+          type: number
+          default: 200
+          description: Радиус генерируемого города
+        buildingProbability:
+          type: number
+          default: 0.7
+          description: Вероятность генерации здания в блоке (0–1)
+        buildingHeightMin:
+          type: number
+          default: 20
+        buildingHeightMax:
+          type: number
+          default: 100
+      required: [blockSize, roadWidth, cityRadius]
+
+    # Игрок
+    PlayerState:
+      type: object
+      description: Состояние персонажа игрока
+      properties:
+        position:
+          $ref: '#/components/schemas/Vector3'
+        velocityY:
+          type: number
+          description: Вертикальная скорость (для прыжка/гравитации)
+          default: 0
+        isOnGround:
+          type: boolean
+          default: true
+        isInCar:
+          type: boolean
+          default: false
+        speed:
+          type: number
+          description: Текущая скорость передвижения (units/sec)
+          default: 10
+        sprintSpeed:
+          type: number
+          default: 20
+        currentCarIndex:
+          type: integer
+          nullable: true
+          description: Индекс занятого автомобиля в массиве cars[]
+      required: [position, isOnGround, isInCar]
+
+    # Автомобиль
+    CarObject:
+      type: object
+      description: Объект автомобиля (полицейская машина с мигалками)
+      properties:
+        mesh:
+          type: string
+          description: THREE.Group — 3D-модель авто (кузов + крыша + колёса + PointLight x2)
+        position:
+          $ref: '#/components/schemas/Vector3'
+        speed:
+          type: number
+          description: Текущая скорость (units/sec)
+          default: 0
+        maxSpeed:
+          type: number
+          default: 40
+        angle:
+          type: number
+          description: Направление движения (радианы)
+          default: 0
+        driftAngle:
+          type: number
+          description: Угол дрифта (радианы), lerp → 0 при отпускании
+          default: 0
+        driftVelocity:
+          $ref: '#/components/schemas/Vector3'
+          description: Вектор скольжения при дрифте
+        isOccupied:
+          type: boolean
+          description: Занята ли машина игроком
+          default: false
+        sirenTimer:
+          type: number
+          description: Таймер мигалки (увеличивается на delta*15 каждый кадр)
+          default: 0
+        lightRed:
+          type: string
+          description: THREE.PointLight — красный прожектор мигалки
+        lightBlue:
+          type: string
+          description: THREE.PointLight — синий прожектор мигалки
+        color:
+          type: integer
+          description: HEX-цвет кузова (например 0xff5252)
+      required: [mesh, speed, angle, isOccupied, sirenTimer]
+
+    # NPC пешеход
+    NPCObject:
+      type: object
+      description: Объект NPC-пешехода с ИИ (конечный автомат walk/panic/dead)
+      properties:
+        mesh:
+          type: string
+          description: THREE.Group — 3D-модель NPC (тело + голова + 2 ноги)
+        position:
+          $ref: '#/components/schemas/Vector3'
+        state:
+          type: string
+          enum: [walk, panic, dead]
+          default: walk
+          description: Текущее состояние ИИ
+        speed:
+          type: number
+          description: Базовая скорость (units/sec)
+          minimum: 2.0
+          maximum: 3.5
+        panicTimer:
+          type: number
+          description: Оставшееся время в состоянии panic (сек)
+          default: 0
+        waypoints:
+          type: array
+          description: Массив точек маршрута (5 точек в радиусе 40 ед.)
+          items:
+            $ref: '#/components/schemas/Vector2'
+          minItems: 5
+          maxItems: 5
+        wpIdx:
+          type: integer
+          description: Индекс текущей целевой точки
+          default: 0
+        alive:
+          type: boolean
+          default: true
+        legL:
+          type: string
+          description: THREE.Mesh — левая нога (анимация через rotation.x)
+        legR:
+          type: string
+          description: THREE.Mesh — правая нога (анимация через rotation.x)
+      required: [position, state, speed, waypoints, alive]
+
+    # Оружие
+    WeaponState:
+      type: object
+      description: Состояние оружия игрока (неоновая цветовая схема)
+      properties:
+        ammoInMagazine:
+          type: integer
+          default: 30
+          minimum: 0
+          maximum: 30
+        isFiring:
+          type: boolean
+          description: Нажата ли ЛКМ (режим авто-огня)
+          default: false
+        autoFireTimer:
+          type: number
+          description: Таймер до следующего выстрела (сек)
+          default: 0
+        fireRate:
+          type: number
+          description: Интервал между выстрелами (сек)
+          default: 0.09
+        isReloading:
+          type: boolean
+          default: false
+        muzzleFlashTimer:
+          type: number
+          description: Оставшееся время видимости вспышки (сек)
+          default: 0
+      required: [ammoInMagazine, isFiring, fireRate]
+
+    # Результат попадания (Raycaster)
+    RaycastHit:
+      type: object
+      description: Результат пересечения луча с объектом сцены
+      properties:
+        point:
+          $ref: '#/components/schemas/Vector3'
+          description: Точка попадания в мировых координатах
+        normal:
+          $ref: '#/components/schemas/Vector3'
+          description: Нормаль поверхности в точке попадания
+        distance:
+          type: number
+          description: Расстояние от источника луча до точки попадания
+        object:
+          type: string
+          description: THREE.Mesh — объект, в который попал луч
+        hitType:
+          type: string
+          enum: [npc, vehicle, building, terrain, tree]
+          description: Тип поражённого объекта
+      required: [point, normal, distance, hitType]
+
+    # Частица
+    Particle:
+      type: object
+      description: Объект системы частиц
+      properties:
+        mesh:
+          type: string
+          description: THREE.Mesh — 3D-объект частицы
+        velocity:
+          $ref: '#/components/schemas/Vector3'
+        life:
+          type: number
+          description: Оставшееся время жизни (сек)
+        maxLife:
+          type: number
+          description: Начальное время жизни (сек)
+        type:
+          type: string
+          enum: [spark, blood, shell, smoke, bullethole]
+        isSpark:
+          type: boolean
+          description: Флаг искры (ускоренное угасание life *= 5)
+          default: false
+        isBlood:
+          type: boolean
+          description: Флаг крови (billboarding + падение вниз)
+          default: false
+      required: [velocity, life, type]
+
+    # HUD
+    HUDState:
+      type: object
+      description: Состояние игрового интерфейса (HUD)
+      properties:
+        money:
+          type: integer
+          default: 5000000
+        wantedLevel:
+          type: integer
+          minimum: 0
+          maximum: 5
+          default: 5
+        ammoDisplay:
+          type: string
+          example: "30 / ∞"
+        interactionHintVisible:
+          type: boolean
+          default: false
+        interactionHintText:
+          type: string
+          example: "Нажми F сесть"
+        killCount:
+          type: integer
+          description: Счётчик убийств (отображается при каждом kill)
+          default: 0
+      required: [money, wantedLevel]
+
+    # Вспомогательные типы
+    Vector3:
+      type: object
+      properties:
+        x: { type: number }
+        y: { type: number }
+        z: { type: number }
+      required: [x, y, z]
+
+    Vector2:
+      type: object
+      properties:
+        x: { type: number }
+        z: { type: number }
+      required: [x, z]
+
+# ──────────────────────────────────────────
+# GAME LOOP EVENTS (внутренние события)
+# ──────────────────────────────────────────
+  events:
+    onNPCKilled:
+      description: Вызывается при уничтожении NPC (пуля или наезд)
+      payload:
+        npcIndex: integer
+        position: Vector3
+        cause:
+          type: string
+          enum: [bullet, vehicle]
+
+    onVehicleEnter:
+      description: Вызывается при посадке игрока в машину
+      payload:
+        carIndex: integer
+        playerPosition: Vector3
+
+    onVehicleExit:
+      description: Вызывается при выходе игрока из машины
+      payload:
+        carIndex: integer
+        exitPosition: Vector3
+
+    onBulletFired:
+      description: Вызывается при каждом выстреле
+      payload:
+        origin: Vector3
+        direction: Vector3
+        hit: RaycastHit
+
+    onCityGenerated:
+      description: Вызывается после завершения процедурной генерации города
+      payload:
+        buildingCount: integer
+        npcCount: integer
+        carCount: integer
+        treeCount: integer
+
+    onDriftStart:
+      description: Вызывается при активации дрифта (ПРОБЕЛ + speed > 10)
+      payload:
+        carIndex: integer
+        speed: number
+
+    onReload:
+      description: Вызывается при автоматической перезарядке оружия
+      payload:
+        reloadTime: number
